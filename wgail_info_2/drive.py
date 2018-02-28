@@ -11,18 +11,17 @@ from models import Generator
 from keras.models import Model
 import cv2
 
-code = 0
+code = 1
 
 feat_dim = [7, 13, 1024]
 aux_dim = 10
 encode_dim = 2
 action_dim = 3
-pre_actions_path = "/home/zhiyang/Desktop/intention/human_0/pre_actions.npz"
-param_path = "/home/zhiyang/Desktop/intention/wgail_info_params_0/params/generator_model_37.h5"
+pre_actions_path = "/home/yunzhu/Desktop/human_1/pre_actions.npz"
+param_path = "/home/yunzhu/Desktop/wgail_info_params_1/params/generator_model_30.h5"
 
-MAX_STEP_LIMIT = 300
-MIN_STEP_LIMIT = 100
-PRE_STEP = 100
+MAX_STEP_LIMIT = 200
+PRE_STEP = 120
 
 
 def clip(v, lo, hi):
@@ -83,21 +82,19 @@ def main():
     pre_actions = np.load(pre_actions_path)["actions"]
 
     for i in xrange(MAX_STEP_LIMIT):
-        if i < MIN_STEP_LIMIT:
-            action = np.zeros(3, dtype=np.float32)
-        elif i < MIN_STEP_LIMIT + PRE_STEP:
-            action = pre_actions[i - MIN_STEP_LIMIT]
+        if i < PRE_STEP:
+            action = pre_actions[i]
         else:
             action = generator.model.predict([feat, aux, encode])[0]
 
         ob, reward, done, _ = env.step(action)
         feat, aux = get_state(ob, aux_dim, feat_extractor)
 
-        if i == MIN_STEP_LIMIT + PRE_STEP:
+        if i == PRE_STEP:
             print "Start deciding ..."
 
         print "Step:", i, "DistFromStart:", ob.distFromStart, \
-                "TrackPos:", ob.trackPos, "Damage:", ob.damage.item(), \
+                "TrackPos: %.4f" % ob.trackPos, "Damage:", ob.damage.item(), \
                 "Action: %.6f %.6f %.6f" % (action[0], action[1], action[2]), \
                 "Speed:", ob.speedX * 200
 

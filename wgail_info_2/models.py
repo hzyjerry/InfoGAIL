@@ -21,9 +21,8 @@ from keras.utils.np_utils import to_categorical
 
 parser = argparse.ArgumentParser(description="TRPO")
 parser.add_argument("--paths_per_collect", type=int, default=10)
-parser.add_argument("--max_step_limit", type=int, default=300)
-parser.add_argument("--min_step_limit", type=int, default=100)
-parser.add_argument("--pre_step", type=int, default=100)
+parser.add_argument("--max_step_limit", type=int, default=200)
+parser.add_argument("--pre_step", type=int, default=0)      ## (hzyjerry): no pre step
 parser.add_argument("--n_iter", type=int, default=1000)
 parser.add_argument("--gamma", type=float, default=.95)
 parser.add_argument("--lam", type=float, default=.97)
@@ -43,11 +42,9 @@ parser.add_argument("--batch_size", type=int, default=500)
 
 args = parser.parse_args()
 
-
 class TRPOAgent(object):
     config = dict2(paths_per_collect = args.paths_per_collect,
                    max_step_limit = args.max_step_limit,
-                   min_step_limit = args.min_step_limit,
                    pre_step = args.pre_step,
                    n_iter = args.n_iter,
                    gamma = args.gamma,
@@ -90,13 +87,16 @@ class TRPOAgent(object):
         self.oldaction_dist_logstd = oldaction_dist_logstd = \
                 tf.placeholder(dtype, shape=[None, action_dim])
 
+        self.file_writer = tf.summary.FileWriter('/home/zhiyang/Desktop/intention/logs', self.sess.graph)
+
+
         # Create neural network.
-        print "Now we build trpo generator"
+        print("Now we build trpo generator")
         self.generator = self.create_generator(feats, auxs, encodes)
-        print "Now we build discriminator"
+        print("Now we build discriminator")
         self.discriminator, self.discriminate = \
             self.create_discriminator(img_dim, aux_dim, action_dim)
-        print "Now we build posterior"
+        print("Now we build posterior")
         self.posterior = \
             self.create_posterior(img_dim, aux_dim, action_dim, encode_dim)
         self.posterior_target = \
@@ -176,13 +176,20 @@ class TRPOAgent(object):
         h = merge([h, c], mode='sum')
         h = LeakyReLU()(h)
 
+        '''
         steer = Dense(1, activation='tanh', init=lambda shape, name:
                       normal(shape, scale=1e-4, name=name))(h)
         accel = Dense(1, activation='sigmoid', init=lambda shape, name:
                              normal(shape, scale=1e-4, name=name))(h)
         brake = Dense(1, activation='sigmoid', init=lambda shape, name:
                       normal(shape, scale=1e-4, name=name))(h)
-        actions = merge([steer, accel, brake], mode='concat')
+        '''
+        link1 = Dense(1, activation='sigmoid', init=lambda shape, name:
+                             normal(shape, scale=1e-4, name=name))(h)
+        link2 = Dense(1, activation='sigmoid', init=lambda shape, name:
+                      normal(shape, scale=1e-4, name=name))(h)
+        
+        actions = merge([link1, link2], mode='concat')
         model = Model(input=[feats, auxs, encodes], output=actions)
         return model
 
@@ -253,6 +260,7 @@ class TRPOAgent(object):
         return model
 
     def act(self, feats, auxs, encodes, logstds, *args):
+        #print(feats.shape, auxs.shape, encodes.shape)
         action_dist_mu = \
                 self.sess.run(
                     self.action_dist_mu,
@@ -263,8 +271,8 @@ class TRPOAgent(object):
                 np.random.randn(*logstds.shape)
 
         act[:, 0] = np.clip(act[:, 0], -1, 1)
-        act[:, 1] = np.clip(act[:, 1], 0, 1)
-        act[:, 2] = np.clip(act[:, 2], 0, 1)
+        act[:, 1] = np.clip(act[:, 1], -1, 1)
+        #act[:, 2] = np.clip(act[:, 2], 0, 1)
 
         return act
 
@@ -274,7 +282,7 @@ class TRPOAgent(object):
         numeptotal = 0
 
         # Set up for training discrimiator
-        print "Loading data ..."
+        print("Loading data ...")
         imgs_d, auxs_d, actions_d = demo["imgs"], demo["auxs"], demo["actions"]
         numdetotal = imgs_d.shape[0]
         idx_d = np.arange(numdetotal)
@@ -283,20 +291,22 @@ class TRPOAgent(object):
         imgs_d = imgs_d[idx_d]
         auxs_d = auxs_d[idx_d]
         actions_d = actions_d[idx_d]
-        print "Resizing img for demo ..."
+        print("Resizing img for demo ...")
         imgs_reshaped_d = []
-        for i in xrange(numdetotal):
+        for i in range(numdetotal):
             imgs_reshaped_d.append(np.expand_dims(cv2.resize(imgs_d[i],
                 (self.img_dim[0], self.img_dim[1])), axis=0))
-        imgs_d = np.concatenate(imgs_reshaped_d, axis=0).astype(np.float32)
-        imgs_d = (imgs_d - 128.) / 128.
-        print "Shape of resized demo images:", imgs_d.shape
+        #imgs_d = np.concatenate(imgs_reshaped_d, axis=0).astype(np.float32)
+        imgs_d = np.array(imgs_reshaped_d, dtype = np.float32)
+        print("Shape of pre-resized demo images:", imgs_d.shape)
+        for i in range(imgs_d.shape[0]):
+            imgs_d[i] = (imgs_d[i] - 128.) / 128.
+        print("Shape of resized demo images:", imgs_d.shape)
 
-        for i in xrange(38, config.n_iter):
+        for i in range(1, config.n_iter):
 
             # Generating paths.
-            # if i == 1:
-            if i == 38:
+            if i == 1:
                 paths_per_collect = 30
             else:
                 paths_per_collect = 10
@@ -308,7 +318,6 @@ class TRPOAgent(object):
                 self.aux_dim,
                 self.encode_dim,
                 config.max_step_limit,
-                config.min_step_limit,
                 config.pre_step,
                 paths_per_collect,
                 self.pre_actions,
@@ -317,11 +326,11 @@ class TRPOAgent(object):
 
             for path in rollouts:
                 self.buffer.add(path)
-            print "Buffer count:", self.buffer.count()
+            print("Buffer count:", self.buffer.count())
 
             paths = self.buffer.get_sample(config.sample_size)
 
-            print "Calculating actions ..."
+            print("Calculating actions ...")
             for path in paths:
                 path["mus"] = self.sess.run(
                     self.action_dist_mu,
@@ -338,7 +347,7 @@ class TRPOAgent(object):
             actions_n = np.concatenate([path["actions"] for path in paths])
             imgs_n = np.concatenate([path["imgs"] for path in paths])
 
-            print "Epoch:", i, "Total sampled data points:", feats_n.shape[0]
+            print("Epoch:", i, "Total sampled data points:", feats_n.shape[0])
 
             # Train discriminator
             numnototal = feats_n.shape[0]
@@ -348,8 +357,8 @@ class TRPOAgent(object):
             if i <= 5:
                 d_iter = 120 - i * 20
             else:
-                d_iter = 10
-            for k in xrange(d_iter):
+                d_iter = 20
+            for k in range(d_iter):
                 loss = self.discriminator.train_on_batch(
                     [imgs_n[start_n:start_n + batch_size],
                      auxs_n[start_n:start_n + batch_size],
@@ -374,7 +383,7 @@ class TRPOAgent(object):
                 if start_n + batch_size >= numnototal:
                     start_n = (start_n + batch_size) % numnototal
 
-                print "Discriminator step:", k, "loss:", loss
+                print("Discriminator step:", k, "loss:", loss)
 
             idx = np.arange(numnototal)
             np.random.shuffle(idx)
@@ -392,7 +401,7 @@ class TRPOAgent(object):
             encodes_val = encodes_n[idx][numno_train:]
 
             start_n = 0
-            for j in xrange(config.p_iter):
+            for j in range(config.p_iter):
                 loss = self.posterior.train_on_batch(
                     [imgs_train[start_n:start_n + batch_size],
                      auxs_train[start_n:start_n + batch_size],
@@ -405,7 +414,7 @@ class TRPOAgent(object):
 
                 posterior_weights = self.posterior.get_weights()
                 posterior_target_weights = self.posterior_target.get_weights()
-                for k in xrange(len(posterior_weights)):
+                for k in range(len(posterior_weights)):
                     posterior_target_weights[k] = 0.5 * posterior_weights[k] +\
                             0.5 * posterior_target_weights[k]
                 self.posterior_target.set_weights(posterior_target_weights)
@@ -414,7 +423,7 @@ class TRPOAgent(object):
                     [imgs_val, auxs_val, actions_val])
                 val_loss = -np.average(
                     np.sum(np.log(output_p) * encodes_val, axis=1))
-                print "Posterior step:", j, "loss:", loss, val_loss
+                print("Posterior step:", j, "loss:", loss, val_loss)
 
             # Computing returns and estimating advantage function.
             path_idx = 0
@@ -426,8 +435,8 @@ class TRPOAgent(object):
                     [path["imgs"], path["auxs"], path["actions"]])
                 output_p = self.posterior_target.predict(
                     [path["imgs"], path["auxs"], path["actions"]])
-                path["rewards"] = np.ones(path["raws"].shape[0]) * 2 + \
-                        output_d.flatten() * 0.1 + \
+                path["rewards"] = np.ones(path["raws"].shape[0]) * 1.2 + \
+                        output_d.flatten() * 0.2 + \
                         np.sum(np.log(output_p) * path["encodes"], axis=1)
 
                 path_baselines = np.append(path["baselines"], 0 if
@@ -482,6 +491,9 @@ class TRPOAgent(object):
 
             def loss(th):
                 self.sff(th)
+                #merged = tf.summary.merge_all()
+                #summary = self.sess.run(merged, feed_dict=feed_dict(False))
+                #self.file_writer.add_summary(summay, i)
                 return self.sess.run(self.losses[0], feed_dict=feed)
             theta = linesearch(loss, thprev, fullstep, neggdotstepdir / lm)
             self.sff(theta)
@@ -505,7 +517,7 @@ class TRPOAgent(object):
             if entropy != entropy:
                 exit(-1)
 
-            param_dir = "/home/zhiyang/Desktop/intention/params/"
+            param_dir = "/home/zhiyang/Desktop/intention/params/reacher_params_0"
             print("Now we save model")
             self.generator.save_weights(
                 param_dir + "generator_model_%d.h5" % i, overwrite=True)
@@ -578,7 +590,7 @@ class Generator(object):
         c = Dense(128)(encodes)
         h = merge([h, c], mode='sum')
         h = LeakyReLU()(h)
-
+        '''
         steer = Dense(1, activation='tanh', init=lambda shape, name:
                       normal(shape, scale=1e-4, name=name))(h)
         accel = Dense(1, activation='sigmoid', init=lambda shape, name:
@@ -586,6 +598,14 @@ class Generator(object):
         brake = Dense(1, activation='sigmoid', init=lambda shape, name:
                       normal(shape, scale=1e-4, name=name))(h)
         actions = merge([steer, accel, brake], mode='concat')
+        '''
+        link1 = Dense(1, activation='sigmoid', init=lambda shape, name:
+                             normal(shape, scale=1e-4, name=name))(h)
+        link2 = Dense(1, activation='sigmoid', init=lambda shape, name:
+                      normal(shape, scale=1e-4, name=name))(h)
+        
+        actions = merge([link1, link2], mode='concat')
+
         model = Model(input=[feats, auxs, encodes], output=actions)
         return model, model.trainable_weights, feats, auxs, encodes
 

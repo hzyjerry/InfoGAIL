@@ -1,4 +1,4 @@
-from gym_torcs import TorcsEnv
+import gym, roboschool
 import numpy as np
 import argparse
 import time
@@ -14,14 +14,16 @@ from models import TRPOAgent
 
 def playGame(finetune=0):
 
-    demo_dir = "/home/zhiyang/Desktop/intention/params/human_0/"
-    param_dir = "/home/zhiyang/Desktop/intention/wgail_info_params_0/"
-    pre_actions_path = "/home/zhiyang/Desktop/intention/params/human_0/pre_actions.npz"
-    feat_dim = [7, 13, 1024]
-    img_dim = [50, 50, 3]
-    aux_dim = 10
-    encode_dim = 2
-    action_dim = 3
+    demo_dir = "/home/zhiyang/Desktop/intention/reacher/rl_demo/"
+    param_dir = "/home/zhiyang/Desktop/intention/params/"
+    pre_actions_path = ""
+    #feat_dim = [7, 13, 1024]  ## (hzyjerry) how 7, 13
+    feat_dim = [16, 16, 1024]
+    
+    img_dim = [256, 256, 3]
+    aux_dim = 2             ## (hzyjerry) Reacher velocity
+    encode_dim = 2          ## (hzyjerry) Two hidden states
+    action_dim = 2
 
     np.random.seed(1024)
 
@@ -32,10 +34,11 @@ def playGame(finetune=0):
     K.set_session(sess)
 
     # initialize the env
-    env = TorcsEnv(throttle=True, gear_change=False)
+    env = gym.make("RoboschoolReacherRGB_inf-v1") #TorcsEnv(throttle=True, gear_change=False)
 
     # define the model
-    pre_actions = np.load(pre_actions_path)["actions"]
+    #pre_actions = np.load(pre_actions_path)["actions"]
+    pre_actions = None ## (hzyjerry) no pre-actions
     agent = TRPOAgent(env, sess, feat_dim, aux_dim, encode_dim, action_dim,
                       img_dim, pre_actions)
 
@@ -47,23 +50,25 @@ def playGame(finetune=0):
     try:
         if finetune:
             agent.generator.load_weights(
-                param_dir + "params_0/generator_model_37.h5")
+                param_dir + "reacher_params_0/generator_model_37.h5")
             agent.discriminator.load_weights(
-                param_dir + "params_0/discriminator_model_37.h5")
+                param_dir + "reacher_params_0/discriminator_model_37.h5")
             agent.baseline.model.load_weights(
-                param_dir + "params_0/baseline_model_37.h5")
+                param_dir + "reacher_params_0/baseline_model_37.h5")
             agent.posterior.load_weights(
-                param_dir + "params_0/posterior_model_37.h5")
+                param_dir + "reacher_params_0/posterior_model_37.h5")
             agent.posterior_target.load_weights(
-                param_dir + "params_0/posterior_target_model_37.h5")
+                param_dir + "reacher_params_0/posterior_target_model_37.h5")
         else:
+            #agent.generator.load_weights(
+            #    param_dir + "params_bc/params_2/generator_bc_model.h5")
             agent.generator.load_weights(
-                param_dir + "params_bc/params_3/generator_bc_model.h5")
+                param_dir + "reacher_params_0/params_2/generator_bc_model.h5")
         print("Weight load successfully")
     except:
         print("Cannot find the weight")
 
-    print("TORCS Experiment Start.")
+    print("Gym Experiment Start.")
     agent.learn(demo)
 
     print("Finish.")
