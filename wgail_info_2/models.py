@@ -159,6 +159,7 @@ class TRPOAgent(object):
             output=self.base_model.get_layer('activation_40').output
         )
 
+
     def create_generator(self, feats, auxs, encodes):
         feats = Input(tensor=feats)
         x = Convolution2D(256, 3, 3)(feats)
@@ -296,8 +297,8 @@ class TRPOAgent(object):
         for i in range(numdetotal):
             imgs_reshaped_d.append(np.expand_dims(cv2.resize(imgs_d[i],
                 (self.img_dim[0], self.img_dim[1])), axis=0))
-        #imgs_d = np.concatenate(imgs_reshaped_d, axis=0).astype(np.float32)
-        imgs_d = np.array(imgs_reshaped_d, dtype = np.float32)
+        imgs_d = np.concatenate(imgs_reshaped_d, axis=0).astype(np.float32)
+        #imgs_d = np.array(imgs_reshaped_d, dtype = np.float32)
         print("Shape of pre-resized demo images:", imgs_d.shape)
         for i in range(imgs_d.shape[0]):
             imgs_d[i] = (imgs_d[i] - 128.) / 128.
@@ -307,7 +308,7 @@ class TRPOAgent(object):
 
             # Generating paths.
             if i == 1:
-                paths_per_collect = 5
+                paths_per_collect = 20
             else:
                 paths_per_collect = 10
             rollouts = rollout_contin(
@@ -347,7 +348,7 @@ class TRPOAgent(object):
             actions_n = np.concatenate([path["actions"] for path in paths])
             imgs_n = np.concatenate([path["imgs"] for path in paths])
             print("Imgs n shape", imgs_n.shape)
-
+            print("Imgs d shape", imgs_d.shape)
             print("Epoch:", i, "Total sampled data points:", feats_n.shape[0])
 
             # Train discriminator
