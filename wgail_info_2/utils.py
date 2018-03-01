@@ -14,7 +14,7 @@ import tensorflow as tf
 import keras.backend as K
 
 from collections import deque
-
+from profiler import Profiler
 
 seed = 1
 random.seed(seed)
@@ -118,54 +118,58 @@ def rollout_contin(env, agent, feat_extractor, feat_dim, aux_dim, encode_dim,
         reward_d = 0
         reward_p = 0
         for i in range(max_step_limit):
-            print("    current step {}/{}".format(i, max_step_limit))
-            if i == 0:
-                feats.append(feat)
-                auxs.append(aux)
-                encodes.append(encode)
-                logstd = np.array([[-3, -3]], dtype=np.float32)
-                action = agent.act(feat, aux, encode, logstd)
-                actions.append(action)
-                res = env.step(action[0])
-                feat, aux, img = get_state(res[0], res[-1], feat_dim, aux_dim, feat_extractor)
-            else:
-                feats.append(feat)
-                auxs.append(aux)
-                encodes.append(encode)
-                #logstd = np.array([[-2.8, -3, -4]], dtype=np.float32)
-                logstd = np.array([[-3, -3]], dtype=np.float32)
-                logstds.append(logstd)
-                action = agent.act(feat, aux, encode, logstd)
-                actions.append(action)
-                imgs.append(img)
-                raw = res[1]
-                raws.append(raw)
+            with Profiler("Stepping infogail"):
+                #print("    current step {}/{}".format(i, max_step_limit))
+                if i == 0:
+                    feats.append(feat)
+                    auxs.append(aux)
+                    encodes.append(encode)
+                    imgs.append(img)
+                    logstd = np.array([[-3, -3]], dtype=np.float32)
+                    logstds.append(logstd)
+                    action = agent.act(feat, aux, encode, logstd)
+                    actions.append(action)
+                    raws.append(False)
+                    res = env.step(action[0])
+                    feat, aux, img = get_state(res[0], res[-1], feat_dim, aux_dim, feat_extractor)
+                else:
+                    feats.append(feat)
+                    auxs.append(aux)
+                    encodes.append(encode)
+                    logstd = np.array([[-3, -3]], dtype=np.float32)
+                    logstds.append(logstd)
 
-                reward_d += discriminate.predict([img, aux, action])[0, 0] * 0.2
-                reward_p += np.sum(np.log(posterior.predict([img, aux, action]))
-                                   * encode)
-
-                if res[2] or i + 1 == max_step_limit:
-                    path = dict2(feats = np.concatenate(feats),
+                    action = agent.act(feat, aux, encode, logstd)    
+                    actions.append(action)
+                    imgs.append(img)
+                    raw = res[1]
+                    raws.append(raw)
+                    
+                    ### Speed bottle neck: 44fps
+                    reward_d += discriminate.predict([img, aux, action])[0, 0] * 0.2
+                    reward_p += np.sum(np.log(posterior.predict([img, aux, action]))
+                                       * encode)
+                    
+                    if res[2] or i + 1 == max_step_limit:
+                        path = dict2(feats = np.concatenate(feats),
                                  auxs = np.concatenate(auxs),
                                  encodes = np.concatenate(encodes),
                                  imgs = np.concatenate(imgs),
                                  actions = np.concatenate(actions),
                                  logstds = np.concatenate(logstds),
                                  raws = np.array(raws))
-                    print("Appending path")
-                    print(len(paths))
-                    paths.append(path)
-                    step = i + 1 - pre_step
-                    print("Step:", step, "Reward_d:", reward_d, \
-                        "Reward_p:", reward_p, "Total:", \
-                        reward_d + reward_p + step * 1.2)
-                    break
+                        paths.append(path)
+                        step = i + 1 - pre_step
+                        print("Step:", step, "Reward_d:", reward_d, \
+                            "Reward_p:", reward_p, "Total:", \
+                            reward_d + reward_p + step * 1.2)
+                        break
 
-                res = env.step(action[0])
-                feat, aux, img = get_state(res[0], res[-1], feat_dim, aux_dim, feat_extractor)
+                    res = env.step(action[0])
+                    # Speed bottleneck: 60
+                    feat, aux, img = get_state(res[0], res[-1], feat_dim, aux_dim, feat_extractor)
 
-    env.end()
+    #env.end()
     return paths
 
 

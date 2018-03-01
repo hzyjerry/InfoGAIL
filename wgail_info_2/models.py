@@ -21,7 +21,7 @@ from keras.utils.np_utils import to_categorical
 
 parser = argparse.ArgumentParser(description="TRPO")
 parser.add_argument("--paths_per_collect", type=int, default=10)
-parser.add_argument("--max_step_limit", type=int, default=200)
+parser.add_argument("--max_step_limit", type=int, default=60)
 parser.add_argument("--pre_step", type=int, default=0)      ## (hzyjerry): no pre step
 parser.add_argument("--n_iter", type=int, default=1000)
 parser.add_argument("--gamma", type=float, default=.95)
@@ -307,7 +307,7 @@ class TRPOAgent(object):
 
             # Generating paths.
             if i == 1:
-                paths_per_collect = 30
+                paths_per_collect = 5
             else:
                 paths_per_collect = 10
             rollouts = rollout_contin(
@@ -346,6 +346,7 @@ class TRPOAgent(object):
             encodes_n = np.concatenate([path["encodes"] for path in paths])
             actions_n = np.concatenate([path["actions"] for path in paths])
             imgs_n = np.concatenate([path["imgs"] for path in paths])
+            print("Imgs n shape", imgs_n.shape)
 
             print("Epoch:", i, "Total sampled data points:", feats_n.shape[0])
 
